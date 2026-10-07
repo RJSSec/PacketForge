@@ -1,0 +1,1 @@
+chrome.devtools.panels.create("PacketForge","","panel.html",e=>{e.onShown.addListener(e=>{})});

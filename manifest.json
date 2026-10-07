@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "PacketForge - 锐鉴安全",
+  "version": "2.2.0",
+  "description": "PacketForge：DevTools 抓包改包工具箱 —— 捕获历史、请求/回包双向拦截、重放器、入侵测试、并发竞争、解码器。作者：微信公众号-锐鉴安全",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "devtools_page": "devtools.html",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "PacketForge — 打开拦截侧边栏"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "permissions": [
+    "storage",
+    "scripting",
+    "cookies",
+    "debugger",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; base-uri 'self'"
+  }
+}

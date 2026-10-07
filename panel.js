@@ -1,0 +1,40 @@
+import{loadScopeBlockLists}from"./modules/state.js";
+import{setupCopyModal}from"./modules/utils.js";
+import{setupNetworkCapture,setOnRequestAdded}from"./modules/network.js";
+import{initRepeaterWorkspace,renderRepeaterHistory,setDisplayResponse,setAddHeaderRow,setGetHeadersFromEditor,setSwitchMode}from"./modules/repeater.js";
+import{setupDecoder}from"./modules/decoder.js";
+import{setupIntruder,setSwitchMode as setIntruderSwitchMode,setGetHeadersFromEditor as setIntruderGetHeaders}from"./modules/intruder.js";
+import{setupRace,setSwitchMode as setRaceSwitchMode,setGetHeadersFromEditor as setRaceGetHeaders}from"./modules/race.js";
+import{setupResizablePanels,setupTabSwitchers,switchMode,applyAdvancedTabsVisibility,applySidebarWidths,applyWorkspaceSplitSizes}from"./modules/ui-layout.js";
+import{renderRequestList,setupEventListeners,setupScopeBlockUI,setupContextMenu,displayResponse,addHeaderRow,getHeadersFromEditor}from"./modules/capture-ui.js";
+
+let rafPending=!1;
+setOnRequestAdded(()=>{rafPending||(rafPending=!0,requestAnimationFrame(()=>{rafPending=!1,renderRequestList()}))});
+setDisplayResponse(displayResponse);
+setAddHeaderRow(addHeaderRow);
+setGetHeadersFromEditor(getHeadersFromEditor);
+setSwitchMode(switchMode);
+setIntruderSwitchMode(switchMode);
+setIntruderGetHeaders(getHeadersFromEditor);
+setRaceSwitchMode(switchMode);
+setRaceGetHeaders(getHeadersFromEditor);
+
+document.addEventListener("DOMContentLoaded",async()=>{
+  await loadScopeBlockLists();
+  applySidebarWidths();
+  applyWorkspaceSplitSizes();
+  applyAdvancedTabsVisibility();
+  setupNetworkCapture();
+  setupEventListeners();
+  setupTabSwitchers();
+  setupScopeBlockUI();
+  setupContextMenu();
+  setupCopyModal();
+  setupIntruder();
+  setupRace();
+  setupDecoder();
+  setupResizablePanels();
+  initRepeaterWorkspace();
+  renderRepeaterHistory();
+  renderRequestList();
+});

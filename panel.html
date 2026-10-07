@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PacketForge - 锐鉴安全</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Left Sidebar: Request List -->
+    <aside id="requestsSidebar" class="sidebar requests-sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title-row">
+          <h2>捕获的请求</h2>
+          <div class="sidebar-title-actions">
+            <button type="button" id="downloadSelectedCurlBtn" class="sidebar-action-btn hidden" title="将选中的请求导出为 CSV">↓ 已选 (<span id="selectedCount">0</span>)</button>
+            <button type="button" id="downloadCurlBtn" class="sidebar-action-btn" title="将当前过滤结果导出为 CSV">↓ 全部</button>
+            <button type="button" id="toggleRequestsSidebarBtn" class="sidebar-toggle-btn" title="最小化捕获列表">«</button>
+          </div>
+        </div>
+        <div class="select-all-row">
+          <label class="select-all-label">
+            <input type="checkbox" id="selectAllRequestsCheckbox" aria-label="全选可见请求">
+            <span id="selectAllLabelText">全选</span>
+          </label>
+          <button type="button" id="sortOrderBtn" class="sort-order-btn" title="切换排序（最新/最旧）" aria-label="切换排序">
+            <span id="sortOrderLabel">最新 ↓</span>
+          </button>
+        </div>
+        <div class="capture-controls">
+          <div class="capture-controls-row">
+            <button type="button" id="pauseCaptureBtn" class="capture-control-btn" title="暂停捕获新请求" aria-pressed="false">
+              <span id="pauseCaptureLabel">⏸ 暂停</span>
+            </button>
+            <button type="button" id="clearCapturesBtn" class="capture-control-btn capture-control-btn-danger" title="删除全部捕获的请求">
+              🗑 清空
+            </button>
+          </div>
+          <div class="capture-controls-row">
+            <label for="captureMaxRequestsInput" class="capture-limit-label">上限:</label>
+            <input type="number" id="captureMaxRequestsInput" class="capture-limit-input" min="100" max="2000" step="100" aria-label="捕获数量上限">
+            <span class="capture-limit-hint" id="captureCountHint">0 / 500</span>
+          </div>
+          <div class="capture-controls-row">
+            <label class="capture-toggle-label" title="跳过图片、CSS、字体、视频等静态资源">
+              <input type="checkbox" id="skipStaticAssetsCheckbox">
+              <span>跳过静态资源 <span class="capture-toggle-hint">（.png、.css、.svg、字体…）</span></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- True pre-transmission interception (Burp-style) lives in the Side Panel,
+             because it uses chrome.debugger which can't share a tab with DevTools. -->
+        <details class="intercept-section" id="interceptSection">
+          <summary>🎯 拦截</summary>
+          <div class="intercept-body">
+            <p class="intercept-hint">真正的请求拦截（在请求到达服务器前全部扣下：转发 / 丢弃 / 并发）位于 <strong>侧边栏</strong> ——点击 <strong>PacketForge 工具栏图标</strong> 打开。它依赖 <code>chrome.debugger</code>，同一标签页开着 DevTools 时无法运行，因此它位于 DevTools 之外。</p>
+          </div>
+        </details>
+
+        <div class="search-filter">
+          <div class="search-input-row">
+            <input type="text" id="searchInput" placeholder="搜索 URL…" class="search-input" aria-label="搜索捕获的请求">
+            <select id="searchScopeSelect" class="search-scope-select" aria-label="搜索范围" title="搜索位置">
+              <option value="url">URL</option>
+              <option value="body">请求体</option>
+              <option value="headers">请求头</option>
+              <option value="all">全部</option>
+            </select>
+          </div>
+          <select id="methodFilter" class="filter-select" aria-label="按 HTTP 方法过滤">
+            <option value="">全部方法</option>
+            <option value="GET">GET</option>
+            <option value="POST">POST</option>
+            <option value="PUT">PUT</option>
+            <option value="DELETE">DELETE</option>
+            <option value="PATCH">PATCH</option>
+            <option value="WS">WS</option>
+          </select>
+          <select id="statusFilter" class="filter-select" aria-label="按状态码过滤">
+            <option value="">全部状态</option>
+            <option value="2xx">2xx</option>
+            <option value="3xx">3xx</option>
+            <option value="4xx">4xx</option>
+            <option value="5xx">5xx</option>
+          </select>
+        </div>
+        <div class="scope-block-section">
+          <button type="button" id="scopeBlockToggle" class="scope-block-toggle">
+            <span class="toggle-icon">▼</span> 捕获范围与排除
+          </button>
+          <div id="scopeBlockContent" class="scope-block-content collapsed">
+            <div class="scope-block-group">
+              <label>范围（只捕获这些域名）</label>
+              <div class="domain-add-row">
+                <input type="text" id="scopeInput" placeholder="example.com" class="domain-input">
+                <button type="button" id="addScopeBtn" class="btn btn-small">添加</button>
+              </div>
+              <ul id="scopeList" class="domain-list"></ul>
+              <p class="scope-hint">留空 = 捕获全部</p>
+            </div>
+            <div class="scope-block-group">
+              <label>排除（永不捕获这些域名）</label>
+              <div class="domain-add-row">
+                <input type="text" id="blockInput" placeholder="analytics.example.com" class="domain-input">
+                <button type="button" id="addBlockBtn" class="btn btn-small">添加</button>
+              </div>
+              <ul id="blockList" class="domain-list"></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+      <ul id="requestList" class="request-list"></ul>
+      <div class="brand-footer">PacketForge · 作者：微信公众号 <strong>锐鉴安全</strong></div>
+    </aside>
+    <div id="leftResizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-label="调整捕获列表宽度"></div>
+
+    <!-- Center: Request Editor + Response -->
+    <main class="main-content">
+      <div class="mode-tabs" role="tablist" aria-label="工具面板">
+        <button type="button" id="tab-repeater" role="tab" aria-selected="true" aria-controls="repeaterPanel" class="mode-tab active" data-mode="repeater">重放器</button>
+        <button type="button" id="tab-intruder" role="tab" aria-selected="false" aria-controls="intruderPanel" class="mode-tab" data-mode="intruder" data-advanced-tab="true">入侵测试</button>
+        <button type="button" id="tab-race" role="tab" aria-selected="false" aria-controls="racePanel" class="mode-tab" data-mode="race" data-advanced-tab="true">并发竞争</button>
+        <button type="button" id="tab-decoder" role="tab" aria-selected="false" aria-controls="decoderPanel" class="mode-tab" data-mode="decoder" data-advanced-tab="true">解码器</button>
+
+        <button type="button" id="advancedTabsToggleBtn" class="mode-tab mode-tab-toggle" aria-pressed="false" title="显示或隐藏高级工具">高级</button>
+      </div>
+
+      <div id="repeaterPanel" class="mode-panel" role="tabpanel" aria-labelledby="tab-repeater">
+      <div id="repeaterEditorSection" class="editor-section">
+        <div class="section-header">
+          <h3>请求编辑器</h3>
+          <div class="editor-actions">
+            <button id="sendBtn" class="btn btn-primary">发送</button>
+            <button id="duplicateTabBtn" class="btn btn-secondary">复制请求</button>
+            <button id="newRepeaterTabBtn" class="btn btn-secondary">＋ 新建标签</button>
+            <button id="sendToIntruderBtn" class="btn btn-secondary">发送到入侵测试</button>
+            <button id="sendToRaceBtn" class="btn btn-secondary">发送到并发竞争</button>
+          </div>
+        </div>
+        <div class="repeater-tabs-bar">
+          <div id="repeaterTabs" class="repeater-tabs"></div>
+        </div>
+        <div class="request-editor">
+          <div class="editor-row">
+            <select id="methodSelect" class="method-select">
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="DELETE">DELETE</option>
+              <option value="PATCH">PATCH</option>
+              <option value="HEAD">HEAD</option>
+              <option value="OPTIONS">OPTIONS</option>
+            </select>
+            <input type="text" id="urlInput" class="url-input" placeholder="https://example.com/api/endpoint">
+          </div>
+          <div class="editor-section-inner">
+            <h4>请求头 <button id="addHeaderBtn" class="btn btn-small">＋ 添加</button></h4>
+            <div id="headersEditor" class="key-value-editor"></div>
+          </div>
+          <div class="editor-section-inner">
+            <h4>请求体</h4>
+            <div class="body-tabs">
+              <button class="tab-btn active" data-tab="raw">原始</button>
+              <button class="tab-btn" data-tab="pretty">格式化</button>
+            </div>
+            <textarea id="bodyEditor" class="body-editor" placeholder="请求体（JSON、表单数据等）"></textarea>
+            <textarea id="bodyPrettyView" class="body-editor body-pretty-view hidden"></textarea>
+          </div>
+          <div class="editor-section-inner repeater-history-section">
+            <h4>请求历史 <button id="clearRepeaterHistoryBtn" class="btn btn-small">清空</button></h4>
+            <ul id="repeaterHistoryList" class="repeater-history-list"></ul>
+          </div>
+        </div>
+      </div>
+
+      <div id="repeaterResizer" class="panel-resizer-horizontal" role="separator" aria-orientation="horizontal" aria-label="调整重放器请求/响应面板高度"></div>
+      <div id="repeaterResponseSection" class="response-section">
+        <div class="section-header">
+          <h3>响应</h3>
+          <div class="response-meta" id="responseMeta">
+            <span id="statusCode">—</span>
+            <span id="responseSize">—</span>
+            <span id="contentType">—</span>
+          </div>
+        </div>
+        <div class="response-tabs">
+          <button class="tab-btn active" data-tab="pretty">格式化</button>
+          <button class="tab-btn" data-tab="raw">原始</button>
+          <button class="tab-btn" data-tab="headers">请求头</button>
+          <button class="tab-btn" data-tab="timing">耗时</button>
+        </div>
+        <div id="responseContent" class="response-content">
+          <pre id="responsePretty" class="response-pretty"></pre>
+          <pre id="responseRaw" class="response-raw hidden"></pre>
+          <pre id="responseHeaders" class="response-headers hidden"></pre>
+          <pre id="responseTiming" class="response-timing hidden"></pre>
+        </div>
+      </div>
+      </div>
+
+      <div id="intruderPanel" class="mode-panel hidden" role="tabpanel" aria-labelledby="tab-intruder">
+        <div class="intruder-layout">
+          <div id="intruderConfigPanel" class="intruder-config">
+            <div class="section-header">
+              <h3>请求模板</h3>
+              <p class="intruder-hint">在 URL、请求体或请求头中选中任意值，然后点击 <strong>＋ 添加 §标记§</strong> 标记位置——或手动输入 §payload§ / $payload$。</p>
+            </div>
+            <div class="intruder-request">
+              <div class="editor-row">
+                <select id="intruderMethod" class="method-select">
+                  <option value="GET">GET</option>
+                  <option value="POST">POST</option>
+                  <option value="PUT">PUT</option>
+                  <option value="DELETE">DELETE</option>
+                  <option value="PATCH">PATCH</option>
+                </select>
+                <input type="text" id="intruderUrl" class="url-input" placeholder="https://example.com/api?id=§1§">
+              </div>
+              <div class="editor-section-inner">
+                <h4>请求头 <button type="button" id="addIntruderHeaderBtn" class="btn btn-small">＋ 添加</button></h4>
+                <div id="intruderHeaders" class="key-value-editor"></div>
+              </div>
+              <div class="editor-section-inner">
+                <h4>请求体</h4>
+                <div class="body-tabs intruder-body-tabs">
+                  <button type="button" class="tab-btn active" data-tab="raw">原始</button>
+                  <button type="button" class="tab-btn" data-tab="pretty">格式化</button>
+                </div>
+                <textarea id="intruderBody" class="body-editor" placeholder='{"id": "§1§"}'></textarea>
+                <textarea id="intruderBodyPrettyView" class="body-editor body-pretty-view hidden"></textarea>
+              </div>
+            </div>
+            <div class="intruder-attack-mode">
+              <label for="intruderAttackMode">攻击模式</label>
+              <select id="intruderAttackMode" class="filter-select">
+                <option value="sniper">Sniper 狙击——每次一个位置（1 组字典）</option>
+                <option value="battering-ram">Battering ram 攻城锤——同一 payload 用于所有位置（1 组字典）</option>
+                <option value="pitchfork">Pitchfork 草叉——多组字典并行迭代（N 组）</option>
+                <option value="cluster-bomb">Cluster bomb 集束——所有组合（N 组）</option>
+              </select>
+              <span class="intruder-attack-mode-hint" id="intruderAttackModeHint"></span>
+            </div>
+
+            <div class="intruder-payloads">
+              <div class="section-header">
+                <h3>Payload 集合</h3>
+                <div class="intruder-position-tabs" id="intruderPositionTabs" role="tablist"></div>
+              </div>
+
+              <!-- Per-set config (shown for the active tab) -->
+              <div class="intruder-payload-set-editor">
+                <div class="payload-type-row">
+                  <label for="payloadType">类型</label>
+                  <select id="payloadType" class="filter-select">
+                    <option value="list">简单列表</option>
+                    <option value="numbers">数字</option>
+                    <option value="preset">内置字典库</option>
+                    <option value="generator">生成器</option>
+                    <option value="recursive">递归（从响应中提取）</option>
+                  </select>
+                  <button type="button" id="importPayloadFileBtn" class="btn btn-small" title="导入字典文件">📄 导入</button>
+                  <input type="file" id="payloadFileInput" accept=".txt,.list,text/plain" hidden>
+                </div>
+
+                <div id="payloadListSection" class="payload-section">
+                  <textarea id="payloadList" class="payload-textarea" placeholder="payload1&#10;payload2&#10;payload3"></textarea>
+                  <span class="payload-count" id="payloadCountList">0 个 payload</span>
+                </div>
+
+                <div id="payloadNumbersSection" class="payload-section hidden">
+                  <div class="number-range">
+                    <label>起</label>
+                    <input type="number" id="payloadFrom" placeholder="1" value="1" title="起始值">
+                    <label>止</label>
+                    <input type="number" id="payloadTo" placeholder="100" value="10" title="结束值">
+                    <label>步长</label>
+                    <input type="number" id="payloadStep" placeholder="1" value="1" min="1" title="步长">
+                  </div>
+                </div>
+
+                <div id="payloadPresetSection" class="payload-section hidden">
+                  <select id="payloadPresetSelect" class="filter-select"></select>
+                  <p class="payload-preset-desc" id="payloadPresetDesc"></p>
+                </div>
+
+                <div id="payloadGeneratorSection" class="payload-section hidden">
+                  <select id="payloadGeneratorSelect" class="filter-select"></select>
+                  <div id="payloadGeneratorConfig" class="payload-gen-config"></div>
+                </div>
+
+                <div id="payloadRecursiveSection" class="payload-section hidden">
+                  <p class="intruder-hint">Payload N+1 is extracted from response N via regex. Attack runs sequentially. Best with Sniper mode and a single position.</p>
+                  <div class="payload-gen-config">
+                    <label>种子 payload <input type="text" id="payloadRecursiveSeed" placeholder="初始值" style="min-width: 180px;"></label>
+                    <label>提取正则 <input type="text" id="payloadRecursivePattern" placeholder="user_(\d+)" style="min-width: 200px;"></label>
+                    <label>最大步数 <input type="number" id="payloadRecursiveMax" value="100" min="1" max="10000"></label>
+                    <label>标志 <input type="text" id="payloadRecursiveFlags" value="i" style="max-width: 80px;"></label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Transforms -->
+              <details class="intruder-transforms">
+                <summary>⚙ 变换 <span id="transformCountBadge" class="transform-count-badge"></span></summary>
+                <div class="intruder-transforms-body">
+                  <p class="intruder-hint">每个 payload 在注入前按顺序经过这些变换。</p>
+                  <ul id="transformChainList" class="transform-chain-list"></ul>
+                  <div class="transform-add-row">
+                    <select id="transformAddSelect" class="filter-select">
+                      <option value="">— 添加变换 —</option>
+                    </select>
+                    <input type="text" id="transformAddArg" class="filter-select" placeholder="参数（如需要）" style="display: none;">
+                    <button type="button" id="transformAddBtn" class="btn btn-small">添加</button>
+                  </div>
+                </div>
+              </details>
+
+              <!-- Phase 2: Grep rules -->
+              <details class="intruder-grep">
+                <summary>🔍 Grep 规则 <span id="grepCountBadge" class="transform-count-badge"></span></summary>
+                <div class="intruder-grep-body">
+                  <p class="intruder-hint">匹配会追加一列 ✓；提取会追加一列值（取捕获组 1 或整个匹配）。</p>
+                  <ul id="grepRulesList" class="transform-chain-list"></ul>
+                  <div class="grep-add-row">
+                    <select id="grepAddType" class="filter-select">
+                      <option value="match">匹配</option>
+                      <option value="extract">提取</option>
+                    </select>
+                    <input type="text" id="grepAddName" placeholder="列名（如 has_token）" class="filter-select">
+                    <input type="text" id="grepAddPattern" placeholder="正则表达式" class="filter-select">
+                    <input type="text" id="grepAddFlags" placeholder="标志（默认 i）" class="filter-select" style="max-width: 80px;">
+                    <button type="button" id="grepAddBtn" class="btn btn-small">添加</button>
+                  </div>
+                </div>
+              </details>
+
+              <!-- Phase 3: Save/load configs -->
+              <details class="intruder-configs">
+                <summary>💾 已保存的攻击配置</summary>
+                <div class="intruder-configs-body">
+                  <div class="config-row">
+                    <select id="configLoadSelect" class="filter-select">
+                      <option value="">— 加载已保存配置 —</option>
+                    </select>
+                    <button type="button" id="configLoadBtn" class="btn btn-small">加载</button>
+                    <button type="button" id="configDeleteBtn" class="btn btn-small">删除</button>
+                  </div>
+                  <div class="config-row">
+                    <input type="text" id="configSaveName" placeholder="配置名称" class="filter-select">
+                    <button type="button" id="configSaveBtn" class="btn btn-small">保存当前</button>
+                  </div>
+                </div>
+              </details>
+
+              <!-- Phase 3: Rate-limit backoff -->
+              <div class="intruder-backoff">
+                <label class="ai-audit-toggle-label">
+                  <input type="checkbox" id="intruderBackoffToggle" checked>
+                  <span>遇 429/503 自动退避（指数 + 抖动，最多重试 3 次）</span>
+                </label>
+              </div>
+            </div>
+            <div class="intruder-speed">
+              <label>速度</label>
+              <div class="speed-row">
+                <span>并发数:</span>
+                <input type="number" id="intruderConcurrency" min="1" max="20" value="5" title="并行请求数 (1-20)">
+                <span>延迟（毫秒）:</span>
+                <input type="number" id="intruderDelay" min="0" max="5000" value="0" title="每批之间的延迟">
+              </div>
+            </div>
+            <div class="intruder-actions">
+              <button type="button" id="startAttackBtn" class="btn btn-primary">开始攻击</button>
+              <button type="button" id="stopAttackBtn" class="btn btn-secondary hidden">停止</button>
+            </div>
+          </div>
+          <div id="intruderResizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-label="调整入侵测试配置/结果面板宽度"></div>
+          <div class="intruder-results">
+            <div class="section-header">
+              <h3>结果</h3>
+              <span id="intruderStatus" class="intruder-status"></span>
+            </div>
+            <div class="intruder-results-toolbar">
+              <input type="text" id="intruderResultsSearch" placeholder="搜索响应体…" class="filter-select" style="flex: 1;">
+              <select id="intruderResultsFilterStatus" class="filter-select" style="max-width: 130px;">
+                <option value="">全部状态</option>
+                <option value="2xx">仅 2xx</option>
+                <option value="3xx">仅 3xx</option>
+                <option value="4xx">仅 4xx</option>
+                <option value="5xx">仅 5xx</option>
+                <option value="anomaly">仅异常</option>
+              </select>
+              <select id="intruderResultsFilterGrep" class="filter-select" style="max-width: 160px;">
+                <option value="">全部匹配项</option>
+              </select>
+              <button type="button" id="intruderExportCsvBtn" class="btn btn-small" title="导出为 CSV">CSV</button>
+              <button type="button" id="intruderExportJsonBtn" class="btn btn-small" title="导出为 JSON">JSON</button>
+              <button type="button" id="intruderExportHarBtn" class="btn btn-small" title="导出为 HAR">HAR</button>
+              <button type="button" id="intruderClearBtn" class="btn btn-small" title="清空全部结果">🗑 清空</button>
+            </div>
+            <div class="results-table-wrap">
+              <table id="intruderResultsTable" class="results-table">
+                <thead id="intruderResultsHead"></thead>
+                <tbody id="intruderResultsBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── RACE CONDITION ─────────────────────────────────────────── -->
+      <div id="racePanel" class="mode-panel hidden" role="tabpanel" aria-labelledby="tab-race">
+        <div class="intruder-layout">
+          <div id="raceConfigPanel" class="intruder-config">
+            <div class="section-header">
+              <h3>并发竞争测试</h3>
+              <p class="intruder-hint">Fire N identical requests concurrently to detect double-spend, coupon reuse, duplicate creation and other app-logic races. Client-side timing; browser can't do single-packet HTTP/2 sync.</p>
+            </div>
+
+            <div class="intruder-request">
+              <div class="editor-row">
+                <select id="raceMethod" class="method-select">
+                  <option value="GET">GET</option>
+                  <option value="POST">POST</option>
+                  <option value="PUT">PUT</option>
+                  <option value="DELETE">DELETE</option>
+                  <option value="PATCH">PATCH</option>
+                </select>
+                <input type="text" id="raceUrl" class="url-input" placeholder="https://example.com/api/redeem">
+              </div>
+              <div class="editor-section-inner">
+                <h4>请求头 <span class="intruder-hint-inline">（每行一条 — <code>名称: 值</code>)</span></h4>
+                <textarea id="raceHeaders" class="body-editor" rows="4" placeholder="Content-Type: application/json&#10;Authorization: Bearer ..."></textarea>
+              </div>
+              <div class="editor-section-inner">
+                <h4>请求体</h4>
+                <textarea id="raceBody" class="body-editor" rows="5" placeholder='{"coupon":"SAVE10"}'></textarea>
+              </div>
+            </div>
+
+            <div class="race-config-grid">
+              <div class="race-config-field">
+                <label for="raceCount">请求数</label>
+                <select id="raceCount" class="filter-select">
+                  <option value="2">2</option>
+                  <option value="5">5</option>
+                  <option value="10" selected>10</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="custom">自定义…</option>
+                </select>
+                <input type="number" id="raceCountCustom" class="filter-select hidden" min="2" max="200" value="10">
+              </div>
+              <div class="race-config-field">
+                <label for="raceSyncMode">同步模式</label>
+                <select id="raceSyncMode" class="filter-select">
+                  <option value="synchronized" selected>同步（同时发出）</option>
+                  <option value="normal">普通（立即发出）</option>
+                  <option value="delay">延迟偏移（错开发出）</option>
+                  <option value="jitter">随机抖动</option>
+                </select>
+              </div>
+              <div class="race-config-field hidden" id="raceDelayField">
+                <label for="raceDelayMs" id="raceDelayLabel">偏移（毫秒）</label>
+                <input type="number" id="raceDelayMs" class="filter-select" min="0" max="1000" value="10">
+              </div>
+              <div class="race-config-field">
+                <label for="raceConcurrency">最大并发在途</label>
+                <input type="number" id="raceConcurrency" class="filter-select" min="1" max="200" value="100" title="限制同时连接数（HTTP1.1 下浏览器每主机约 6 个）">
+              </div>
+            </div>
+
+            <!-- Value templating: substitute a placeholder per request -->
+            <details class="intruder-transforms" id="raceTemplatingDetails">
+              <summary>🔀 值模板 <span id="raceTemplatingBadge" class="transform-count-badge"></span></summary>
+              <div class="intruder-transforms-body">
+                <p class="intruder-hint">Optionally replace a placeholder token in the URL / body / headers with a per-request value. Leave mode = Off for identical requests (the classic double-redeem test).</p>
+                <div class="race-config-grid">
+                  <div class="race-config-field">
+                    <label for="raceTplToken">占位符</label>
+                    <input type="text" id="raceTplToken" class="filter-select" value="{{VAL}}" placeholder="{{VAL}}">
+                  </div>
+                  <div class="race-config-field">
+                    <label for="raceTplMode">模式</label>
+                    <select id="raceTplMode" class="filter-select">
+                      <option value="off" selected>关（请求完全相同）</option>
+                      <option value="static">静态（所有请求同一值）</option>
+                      <option value="increment">递增（基数 + 序号）</option>
+                      <option value="uuid">UUID（每个请求唯一）</option>
+                      <option value="timestamp">时间戳（每个请求唯一）</option>
+                      <option value="list">列表（每行一个值）</option>
+                    </select>
+                  </div>
+                </div>
+                <div id="raceTplStaticField" class="race-config-field hidden">
+                  <label for="raceTplStatic">值</label>
+                  <input type="text" id="raceTplStatic" class="filter-select" placeholder="SAVE10">
+                </div>
+                <div id="raceTplIncrementField" class="race-config-grid hidden">
+                  <div class="race-config-field"><label for="raceTplBase">基数</label><input type="number" id="raceTplBase" class="filter-select" value="1"></div>
+                  <div class="race-config-field"><label for="raceTplStep">步长</label><input type="number" id="raceTplStep" class="filter-select" value="1"></div>
+                </div>
+                <div id="raceTplListField" class="race-config-field hidden">
+                  <label for="raceTplList">值（每行一个——多出的请求复用最后一个）</label>
+                  <textarea id="raceTplList" class="body-editor" rows="4" placeholder="COUPON-A&#10;COUPON-B&#10;COUPON-C"></textarea>
+                </div>
+              </div>
+            </details>
+
+            <div class="race-arm-row">
+              <label class="ai-audit-toggle-label">
+                <input type="checkbox" id="raceWarmToggle" checked>
+                <span>先预热连接 <small>(open TCP/TLS/HTTP-2 to the origin before firing, so the batch isn't staggered by connection setup — big help on HTTP/2 targets; HTTP/1.1 is still browser-capped at ~6 conns)</small></span>
+              </label>
+              <label class="ai-audit-toggle-label" style="margin-top:6px;">
+                <input type="checkbox" id="raceArmToggle">
+                <span>先待命再发射 <small>（先准备全部请求，点击时一起释放——在应用状态刚好的瞬间发出）</small></span>
+              </label>
+            </div>
+
+            <div class="intruder-actions">
+              <button type="button" id="raceStartBtn" class="btn btn-primary">开始并发</button>
+              <button type="button" id="raceReleaseBtn" class="btn btn-primary hidden">🚀 释放 <span id="raceReleaseCount"></span></button>
+              <button type="button" id="raceStopBtn" class="btn btn-secondary hidden">停止</button>
+              <button type="button" id="raceExportJsonBtn" class="btn btn-secondary">导出 JSON</button>
+              <button type="button" id="raceExportCsvBtn" class="btn btn-secondary">导出 CSV</button>
+              <button type="button" id="raceClearBtn" class="btn btn-secondary">🗑 清空</button>
+            </div>
+          </div>
+
+          <div id="raceResizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-label="调整并发竞争配置/结果面板宽度"></div>
+
+          <div class="intruder-results">
+            <div class="section-header">
+              <h3>结果</h3>
+              <span id="raceStatus" class="intruder-status"></span>
+            </div>
+            <div id="raceDashboard" class="race-dashboard"></div>
+            <div id="raceVerdict" class="race-verdict"></div>
+            <div class="results-table-wrap">
+              <table class="results-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>状态</th>
+                    <th>长度</th>
+                    <th>耗时（毫秒）</th>
+                    <th>发出 +毫秒</th>
+                    <th>响应体 / 与基线差异</th>
+                    <th>响应</th>
+                  </tr>
+                </thead>
+                <tbody id="raceResultsBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="decoderPanel" class="mode-panel hidden" role="tabpanel" aria-labelledby="tab-decoder">
+        <div class="decoder-layout">
+          <div class="decoder-section">
+            <div class="section-header">
+              <h3>输入</h3>
+              <div class="decoder-actions">
+                <select id="decoderFormat" class="filter-select">
+                  <option value="base64">Base64</option>
+                  <option value="url">URL</option>
+                  <option value="hex">Hex</option>
+                  <option value="html">HTML Entities</option>
+                  <option value="jwt">JWT</option>
+                </select>
+                <button type="button" id="decodeBtn" class="btn btn-primary">解码</button>
+                <button type="button" id="encodeBtn" class="btn btn-secondary">编码</button>
+              </div>
+            </div>
+            <textarea id="decoderInput" class="decoder-textarea" placeholder="在此粘贴要编/解码的文本…"></textarea>
+          </div>
+          <div class="decoder-section">
+            <div class="section-header">
+              <h3>输出</h3>
+              <button type="button" id="copyDecodedBtn" class="btn btn-small">复制</button>
+            </div>
+            <textarea id="decoderOutput" class="decoder-textarea" placeholder="结果将显示在这里…" readonly></textarea>
+          </div>
+        </div>
+      </div>
+
+
+    </main>
+    <!-- TESTING: AI Assist sidebar + resizer hidden during testing phase -->
+    <div id="rightResizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-label="调整 AI 助手面板宽度" style="display:none;"></div>
+
+    <!-- Right Sidebar: AI Assist -->
+    <aside id="aiSidebar" class="sidebar ai-sidebar" style="display:none;">
+      <div class="sidebar-header">
+        <div class="sidebar-title-row">
+          <h2>AI 助手</h2>
+          <button type="button" id="toggleAiSidebarBtn" class="sidebar-toggle-btn" title="最小化 AI 助手">»</button>
+        </div>
+      </div>
+      <div class="ai-content">
+        <div class="ai-section">
+          <h4>端点分析</h4>
+          <p id="endpointAnalysis" class="ai-placeholder">
+            选择一条请求查看端点分析…
+          </p>
+        </div>
+        <div class="ai-section">
+          <h4>安全测试建议</h4>
+          <ul id="securitySuggestions" class="security-list">
+            <li>SQL 注入</li>
+            <li>IDOR（越权对象引用）</li>
+            <li>鉴权绕过</li>
+            <li>速率限制测试</li>
+          </ul>
+        </div>
+        <div class="privacy-note">
+          隐私：分析默认在 DevTools 本地运行；远程验证需手动开启。
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div id="contextMenu" class="context-menu hidden">
+    <button type="button" class="context-menu-item" data-action="copy-curl">
+      复制为 cURL
+    </button>
+    <button type="button" class="context-menu-item" data-action="download-curl">
+      下载为 cURL
+    </button>
+    <button type="button" class="context-menu-item" data-action="send-to-decoder">
+      发送到解码器
+    </button>
+  </div>
+
+  <div id="intruderResultModal" class="modal hidden">
+    <div class="modal-content modal-large">
+      <h4>响应 #<span id="resultModalIndex"></span></h4>
+      <p class="modal-meta"><span id="resultModalStatus"></span> · <span id="resultModalLength"></span> · <span id="resultModalTime"></span>ms</p>
+      <pre id="resultModalBody" class="result-modal-body"></pre>
+      <div class="modal-actions">
+        <button type="button" id="resultModalClose" class="btn btn-primary">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="copyModal" class="modal hidden">
+    <div class="modal-content">
+      <h4>复制 cURL 命令</h4>
+      <p class="modal-hint">全选 (Ctrl+A) 后复制 (Ctrl+C)</p>
+      <textarea id="copyModalText" class="copy-modal-text" readonly></textarea>
+      <div class="modal-actions">
+        <button type="button" id="copyModalClose" class="btn btn-primary">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="panel.js"></script>
+</body>
+</html>

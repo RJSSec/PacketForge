@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PacketForge 拦截</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body class="sidepanel-body">
+  <div class="sp-header">
+    <h1>🎯 拦截</h1>
+    <span id="spTarget" class="sp-target">no tab</span>
+  </div>
+
+  <div class="sp-bar">
+    <button type="button" id="spToggle" class="btn intercept-toggle">拦截：关</button>
+    <select id="spMode" class="sp-mode" title="选择在此标签页上拦截的内容">
+      <option value="requests">请求</option>
+      <option value="responses">回包</option>
+      <option value="both" selected>请求 + 回包</option>
+    </select>
+  </div>
+  <div class="sp-bar">
+    <button type="button" id="spForwardAll" class="btn btn-small">→ 全部放行</button>
+    <button type="button" id="spDropAll" class="btn btn-small">✕ 全部丢弃</button>
+    <input type="text" id="spFilter" class="search-input" placeholder="过滤：URL 包含…（留空 = 全部）">
+  </div>
+
+  <p id="spStatus" class="sp-status">选择拦截内容（请求 / 回包 / 全部），打开拦截开关，匹配的流量会在到达浏览器前被扣下供编辑。</p>
+
+  <div class="sp-queue-head">暂存队列 <span id="spCount" class="sp-badge"></span></div>
+  <ul id="spQueue" class="sp-queue"></ul>
+
+  <!-- Request / Response detail editor -->
+  <div id="spDetail" class="sp-detail hidden">
+    <div class="sp-detail-head">
+      <span id="spDetailTitle"></span>
+      <button type="button" id="spDetailClose" class="btn-icon">×</button>
+    </div>
+    <label id="spEditUrlLabel" class="sp-togglable">URL</label>
+    <input type="text" id="spEditUrl" class="sp-edit-input sp-togglable">
+    <label id="spEditMethodLabel" class="sp-togglable">方法</label>
+    <input type="text" id="spEditMethod" class="sp-edit-input sp-togglable">
+    <label id="spEditStatusLabel" class="sp-togglable">状态码</label>
+    <input type="text" id="spEditStatus" class="sp-edit-input sp-togglable" placeholder="200">
+    <label>请求头（每行一条 — 名称: 值）</label>
+    <textarea id="spEditHeaders" class="sp-edit-area" rows="5"></textarea>
+    <label id="spEditBodyLabel">内容</label>
+    <textarea id="spEditBody" class="sp-edit-area" rows="5"></textarea>
+    <div id="spEditNote" class="sp-edit-note"></div>
+    <div class="sp-detail-actions">
+      <button type="button" id="spForwardOne" class="btn btn-primary">→ 放行</button>
+      <button type="button" id="spSendRepeater" class="btn btn-primary">📤 发送到重放器</button>
+      <button type="button" id="spDropOne" class="btn btn-secondary">✕ 丢弃</button>
+    </div>
+  </div>
+
+  <div class="brand-footer">PacketForge · 作者：微信公众号 <strong>锐鉴安全</strong></div>
+  <script src="sidepanel.js"></script>
+</body>
+</html>
